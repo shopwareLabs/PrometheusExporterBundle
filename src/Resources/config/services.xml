@@ -1,0 +1,41 @@
+<?xml version="1.0" ?>
+
+<container xmlns="http://symfony.com/schema/dic/services"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
+
+    <services>
+        <!-- Controller -->
+        <service id="Shopware\PrometheusExporter\Controller\MetricsController" public="true">
+            <tag name="controller.service_arguments"/>
+            <argument type="tagged_iterator" tag="shopware.prometheus.metrics" />
+            <argument>%prometheus_metrics.allowed_ips%</argument>
+            <call method="setContainer">
+                <argument type="service" id="service_container"/>
+            </call>
+        </service>
+        
+        <!-- Metric Providers -->
+        <service id="Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider">
+            <tag name="shopware.prometheus.metrics"/>
+        </service>
+
+        <service id="Shopware\PrometheusExporter\Metrics\QueueMetricProvider" autowire="true">
+            <tag name="shopware.prometheus.metrics"/>
+        </service>
+        
+        <service id="Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider">
+            <tag name="shopware.prometheus.metrics"/>
+        </service>
+        
+        <service id="Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider" autowire="true">
+            <tag name="shopware.prometheus.metrics"/>
+        </service>
+        
+        <!-- Commands -->
+        <service id="Shopware\PrometheusExporter\Command\TestMetricsCommand">
+            <argument type="service" id="Shopware\PrometheusExporter\Controller\MetricsController"/>
+            <tag name="console.command"/>
+        </service>
+    </services>
+</container>
