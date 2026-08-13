@@ -43,10 +43,12 @@ return static function (ContainerConfigurator $container): void {
     $services->set(MetricsController::class)
         ->public()
         ->args([
+            service('prometheus_exporter.collector_registry'),
             tagged_iterator('shopware.prometheus.metrics'),
             param('prometheus_exporter.endpoint.allowed_ips'),
+            param('prometheus_exporter.endpoint.auth_token'),
+            service('logger'),
         ])
-        ->call('setContainer', [service('service_container')])
         ->tag('controller.service_arguments');
 
     // Scrape-time metric providers (opt-in via prometheus_exporter.scrape_providers)
@@ -57,7 +59,7 @@ return static function (ContainerConfigurator $container): void {
         ->tag('shopware.prometheus.metrics');
 
     $services->set(OpenSearchMetricProvider::class)
-        ->autowire()
+        ->args([service('service_container')])
         ->tag('shopware.prometheus.metrics');
 
     // Commands

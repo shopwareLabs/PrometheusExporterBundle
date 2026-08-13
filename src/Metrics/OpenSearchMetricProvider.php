@@ -2,353 +2,192 @@
 
 namespace Shopware\PrometheusExporter\Metrics;
 
-use Shopware\PrometheusExporter\Metrics\Struct\Metric;
-use Shopware\PrometheusExporter\Metrics\Struct\MetricValue;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
-use Symfony\Contracts\HttpClient\HttpClientInterface;
 use OpenSearch\Client as OpenSearchClient;
+use Prometheus\CollectorRegistry;
 use Psr\Container\ContainerInterface;
 
 /**
+ * Generic cluster statistics; prefer a dedicated infrastructure exporter
+ * (e.g. elasticsearch_exporter) when you can run one next to the cluster.
+ *
  * @internal
  */
-class OpenSearchMetricProvider extends AbstractMetricProvider
+class OpenSearchMetricProvider implements MetricProviderInterface
 {
+    private const NODE_LABELS = ['node_id', 'node_name'];
+
     /**
-     * @param ContainerInterface $container Service locator to prevent errors when OpenSearch is not installed
+     * @param ContainerInterface $container service locator, so the provider degrades gracefully when no search client is installed
      */
-    public function __construct(
-        #[Autowire(service: 'service_container')]
-        private readonly ContainerInterface $container,
-        private readonly HttpClientInterface $httpClient
-    ) {
+    public function __construct(private readonly ContainerInterface $container)
+    {
     }
 
-    /**
-     * @return array<Metric>
-     */
-    public function getMetrics(): array
+    public function collect(CollectorRegistry $registry): void
     {
-        // Check if OpenSearch is enabled
         if (!$this->isOpenSearchEnabled()) {
-            return [];
+            return;
         }
 
-        try {
-            $client = $this->getOpenSearchClient();
-            if (!$client) {
-                return [];
-            }
-
-            $metrics = [];
-            
-            // Get cluster health
-            $clusterHealth = $client->cluster()->health();
-            $clusterStatusMetric = $this->getClusterStatusMetric($clusterHealth);
-            if ($clusterStatusMetric) {
-                $metrics[] = $clusterStatusMetric;
-            }
-
-            // Get node stats
-            $nodeStats = $client->nodes()->stats();
-            $nodeMetrics = $this->getNodeMetrics($nodeStats);
-            foreach ($nodeMetrics as $metric) {
-                $metrics[] = $metric;
-            }
-
-            // Get indices stats
-            $indicesStats = $client->indices()->stats();
-            $indicesMetrics = $this->getIndicesMetrics($indicesStats);
-            foreach ($indicesMetrics as $metric) {
-                $metrics[] = $metric;
-            }
-
-            return $metrics;
-        } catch (\Throwable $e) {
-            // If we encounter any error, return empty metrics rather than breaking the endpoint
-            return [];
+        $client = $this->getOpenSearchClient();
+        if ($client === null) {
+            return;
         }
+
+        $this->collectClusterHealth($registry, $client->cluster()->health());
+        $this->collectNodeStats($registry, $client->nodes()->stats());
+        $this->collectIndicesStats($registry, $client->indices()->stats());
     }
 
     private function isOpenSearchEnabled(): bool
     {
-        // Check if OpenSearch client service exists
-        if (!$this->container->has('OpenSearch\\Client') && !$this->container->has('Elasticsearch\\Client')) {
+        if (!$this->container->has('OpenSearch\Client') && !$this->container->has('Elasticsearch\Client')) {
             return false;
         }
 
-        try {
-            // Try to get configuration to see if it's enabled and reachable
-            $config = [];
-            if ($this->container->has('Shopware\\Elasticsearch\\Framework\\ElasticsearchHelper')) {
-                $esHelper = $this->container->get('Shopware\\Elasticsearch\\Framework\\ElasticsearchHelper');
-                if (method_exists($esHelper, 'isEnabled') && !$esHelper->isEnabled()) {
-                    return false;
-                }
+        if ($this->container->has('Shopware\Elasticsearch\Framework\ElasticsearchHelper')) {
+            $esHelper = $this->container->get('Shopware\Elasticsearch\Framework\ElasticsearchHelper');
+            if (\is_object($esHelper) && \method_exists($esHelper, 'isEnabled') && !$esHelper->isEnabled()) {
+                return false;
             }
-            
-            return true;
-        } catch (\Throwable $e) {
-            return false;
         }
+
+        return true;
     }
-    
+
     private function getOpenSearchClient(): ?OpenSearchClient
     {
-        try {
-            if ($this->container->has('OpenSearch\\Client')) {
-                return $this->container->get('OpenSearch\\Client');
+        foreach (['OpenSearch\Client', 'Elasticsearch\Client'] as $serviceId) {
+            if ($this->container->has($serviceId)) {
+                $client = $this->container->get($serviceId);
+
+                return $client instanceof OpenSearchClient ? $client : null;
             }
-            
-            if ($this->container->has('Elasticsearch\\Client')) {
-                return $this->container->get('Elasticsearch\\Client');
-            }
-            
-            return null;
-        } catch (\Throwable $e) {
-            return null;
         }
+
+        return null;
     }
-    
-    private function getClusterStatusMetric(array $clusterHealth): ?Metric
+
+    /**
+     * @param array<string, mixed> $clusterHealth
+     */
+    private function collectClusterHealth(CollectorRegistry $registry, array $clusterHealth): void
     {
         if (!isset($clusterHealth['status'])) {
-            return null;
+            return;
         }
-        
-        // Map status to numeric value for easier monitoring
-        // 0 = green, 1 = yellow, 2 = red
-        $statusMap = [
-            'green' => 0,
-            'yellow' => 1,
-            'red' => 2,
-        ];
-        
-        $statusValue = $statusMap[$clusterHealth['status']] ?? 3; // Unknown status
-        
-        $values = [
-            new MetricValue((float) $statusValue, ['status' => $clusterHealth['status'] ?? 'unknown']),
-        ];
-        
-        // Create additional metric values for each status (1 for current status, 0 for others)
-        foreach ($statusMap as $status => $value) {
-            $values[] = new MetricValue(
-                $status === $clusterHealth['status'] ? 1.0 : 0.0,
-                ['state' => $status]
-            );
-        }
-        
-        return $this->createMetric(
-            'opensearch_cluster_status',
-            $values,
-            'OpenSearch cluster status (0=green, 1=yellow, 2=red)',
-            Metric::TYPE_GAUGE
+
+        // 0 = green, 1 = yellow, 2 = red, 3 = unknown
+        $statusMap = ['green' => 0, 'yellow' => 1, 'red' => 2];
+
+        $registry
+            ->getOrRegisterGauge('', 'opensearch_cluster_status', 'OpenSearch cluster status (0=green, 1=yellow, 2=red, 3=unknown)')
+            ->set((float) ($statusMap[$clusterHealth['status']] ?? 3));
+
+        $stateGauge = $registry->getOrRegisterGauge(
+            '',
+            'opensearch_cluster_status_state',
+            'One time series per state; 1 for the current cluster state, 0 otherwise',
+            ['state'],
         );
-    }
-    
-    /**
-     * @return array<Metric>
-     */
-    private function getNodeMetrics(array $nodeStats): array
-    {
-        $metrics = [];
-        
-        if (!isset($nodeStats['nodes']) || !is_array($nodeStats['nodes'])) {
-            return $metrics;
+        foreach (\array_keys($statusMap) as $state) {
+            $stateGauge->set($state === $clusterHealth['status'] ? 1.0 : 0.0, [$state]);
         }
-        
-        $totalJvmMemoryUsed = 0;
-        $totalJvmMemoryMax = 0;
-        $totalDiskTotal = 0;
-        $totalDiskUsed = 0;
-        
+    }
+
+    /**
+     * @param array<string, mixed> $nodeStats
+     */
+    private function collectNodeStats(CollectorRegistry $registry, array $nodeStats): void
+    {
+        if (!isset($nodeStats['nodes']) || !\is_array($nodeStats['nodes'])) {
+            return;
+        }
+
+        $totalJvmMemoryUsed = 0.0;
+        $totalJvmMemoryMax = 0.0;
+        $totalDiskTotal = 0.0;
+        $totalDiskUsed = 0.0;
+
+        $nodeGauge = static function (string $name, string $help, float $value, string $nodeId, string $nodeName) use ($registry): void {
+            $registry->getOrRegisterGauge('', $name, $help, self::NODE_LABELS)->set($value, [$nodeId, $nodeName]);
+        };
+
         foreach ($nodeStats['nodes'] as $nodeId => $node) {
-            // JVM memory usage
+            $nodeId = (string) $nodeId;
+            $nodeName = (string) ($node['name'] ?? 'unknown');
+
             if (isset($node['jvm']['mem'])) {
-                $jvmMemoryUsed = $node['jvm']['mem']['heap_used_in_bytes'] ?? 0;
-                $jvmMemoryMax = $node['jvm']['mem']['heap_max_in_bytes'] ?? 0;
-                
+                $jvmMemoryUsed = (float) ($node['jvm']['mem']['heap_used_in_bytes'] ?? 0);
+                $jvmMemoryMax = (float) ($node['jvm']['mem']['heap_max_in_bytes'] ?? 0);
+
                 $totalJvmMemoryUsed += $jvmMemoryUsed;
                 $totalJvmMemoryMax += $jvmMemoryMax;
-                
-                $metrics[] = $this->createGauge(
-                    'opensearch_jvm_memory_used_bytes',
-                    (float) $jvmMemoryUsed,
-                    'JVM heap memory used in bytes',
-                    ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opensearch_jvm_memory_max_bytes',
-                    (float) $jvmMemoryMax,
-                    'JVM heap maximum memory in bytes',
-                    ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                );
-                
+
+                $nodeGauge('opensearch_jvm_memory_used_bytes', 'JVM heap memory used in bytes', $jvmMemoryUsed, $nodeId, $nodeName);
+                $nodeGauge('opensearch_jvm_memory_max_bytes', 'JVM heap maximum memory in bytes', $jvmMemoryMax, $nodeId, $nodeName);
+
                 if ($jvmMemoryMax > 0) {
-                    $jvmMemoryPercentage = ($jvmMemoryUsed / $jvmMemoryMax) * 100;
-                    $metrics[] = $this->createGauge(
-                        'opensearch_jvm_memory_used_percentage',
-                        $jvmMemoryPercentage,
-                        'JVM heap memory used percentage',
-                        ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                    );
+                    $nodeGauge('opensearch_jvm_memory_used_percentage', 'JVM heap memory used percentage', $jvmMemoryUsed / $jvmMemoryMax * 100, $nodeId, $nodeName);
                 }
             }
-            
-            // Disk usage
+
             if (isset($node['fs']['total'])) {
-                $diskTotal = $node['fs']['total']['total_in_bytes'] ?? 0;
-                $diskFree = $node['fs']['total']['free_in_bytes'] ?? 0;
-                $diskUsed = $diskTotal - $diskFree;
-                
+                $diskTotal = (float) ($node['fs']['total']['total_in_bytes'] ?? 0);
+                $diskUsed = $diskTotal - (float) ($node['fs']['total']['free_in_bytes'] ?? 0);
+
                 $totalDiskTotal += $diskTotal;
                 $totalDiskUsed += $diskUsed;
-                
-                $metrics[] = $this->createGauge(
-                    'opensearch_disk_total_bytes',
-                    (float) $diskTotal,
-                    'Total disk space in bytes',
-                    ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opensearch_disk_used_bytes',
-                    (float) $diskUsed,
-                    'Used disk space in bytes',
-                    ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                );
-                
+
+                $nodeGauge('opensearch_disk_total_bytes', 'Total disk space in bytes', $diskTotal, $nodeId, $nodeName);
+                $nodeGauge('opensearch_disk_used_bytes', 'Used disk space in bytes', $diskUsed, $nodeId, $nodeName);
+
                 if ($diskTotal > 0) {
-                    $diskUsedPercentage = ($diskUsed / $diskTotal) * 100;
-                    $metrics[] = $this->createGauge(
-                        'opensearch_disk_used_percentage',
-                        $diskUsedPercentage,
-                        'Used disk space percentage',
-                        ['node_id' => $nodeId, 'node_name' => $node['name'] ?? 'unknown']
-                    );
+                    $nodeGauge('opensearch_disk_used_percentage', 'Used disk space percentage', $diskUsed / $diskTotal * 100, $nodeId, $nodeName);
                 }
             }
         }
-        
-        // Add total metrics across all nodes
+
+        $gauge = static function (string $name, string $help, float $value) use ($registry): void {
+            $registry->getOrRegisterGauge('', $name, $help)->set($value);
+        };
+
         if ($totalJvmMemoryMax > 0) {
-            $metrics[] = $this->createGauge(
-                'opensearch_jvm_memory_used_bytes_total',
-                (float) $totalJvmMemoryUsed,
-                'Total JVM heap memory used in bytes across all nodes'
-            );
-            
-            $metrics[] = $this->createGauge(
-                'opensearch_jvm_memory_max_bytes_total',
-                (float) $totalJvmMemoryMax,
-                'Total JVM heap maximum memory in bytes across all nodes'
-            );
-            
-            $totalJvmMemoryPercentage = ($totalJvmMemoryUsed / $totalJvmMemoryMax) * 100;
-            $metrics[] = $this->createGauge(
-                'opensearch_jvm_memory_used_percentage_total',
-                $totalJvmMemoryPercentage,
-                'Total JVM heap memory used percentage across all nodes'
-            );
+            $gauge('opensearch_jvm_memory_used_bytes_total', 'Total JVM heap memory used in bytes across all nodes', $totalJvmMemoryUsed);
+            $gauge('opensearch_jvm_memory_max_bytes_total', 'Total JVM heap maximum memory in bytes across all nodes', $totalJvmMemoryMax);
+            $gauge('opensearch_jvm_memory_used_percentage_total', 'Total JVM heap memory used percentage across all nodes', $totalJvmMemoryUsed / $totalJvmMemoryMax * 100);
         }
-        
+
         if ($totalDiskTotal > 0) {
-            $metrics[] = $this->createGauge(
-                'opensearch_disk_total_bytes_total',
-                (float) $totalDiskTotal,
-                'Total disk space in bytes across all nodes'
-            );
-            
-            $metrics[] = $this->createGauge(
-                'opensearch_disk_used_bytes_total',
-                (float) $totalDiskUsed,
-                'Total used disk space in bytes across all nodes'
-            );
-            
-            $totalDiskUsedPercentage = ($totalDiskUsed / $totalDiskTotal) * 100;
-            $metrics[] = $this->createGauge(
-                'opensearch_disk_used_percentage_total',
-                $totalDiskUsedPercentage,
-                'Total used disk space percentage across all nodes'
-            );
+            $gauge('opensearch_disk_total_bytes_total', 'Total disk space in bytes across all nodes', $totalDiskTotal);
+            $gauge('opensearch_disk_used_bytes_total', 'Total used disk space in bytes across all nodes', $totalDiskUsed);
+            $gauge('opensearch_disk_used_percentage_total', 'Total used disk space percentage across all nodes', $totalDiskUsed / $totalDiskTotal * 100);
         }
-        
-        return $metrics;
     }
-    
+
     /**
-     * @return array<Metric>
+     * @param array<string, mixed> $indicesStats
      */
-    private function getIndicesMetrics(array $indicesStats): array
+    private function collectIndicesStats(CollectorRegistry $registry, array $indicesStats): void
     {
-        $metrics = [];
-        
-        if (!isset($indicesStats['indices']) || !is_array($indicesStats['indices'])) {
-            return $metrics;
+        if (!isset($indicesStats['indices']) || !\is_array($indicesStats['indices'])) {
+            return;
         }
-        
-        // Collect document counts for each index
-        $docCountValues = [];
-        $storeSizeValues = [];
-        
+
+        $docCountGauge = $registry->getOrRegisterGauge('', 'opensearch_index_documents_count', 'Number of documents in each OpenSearch index', ['index']);
+        $storeSizeGauge = $registry->getOrRegisterGauge('', 'opensearch_index_size_bytes', 'Size of each OpenSearch index in bytes', ['index']);
+
         foreach ($indicesStats['indices'] as $indexName => $indexStats) {
-            $docCount = $indexStats['primaries']['docs']['count'] ?? 0;
-            $storeSize = $indexStats['primaries']['store']['size_in_bytes'] ?? 0;
-            
-            $docCountValues[] = new MetricValue(
-                (float) $docCount,
-                ['index' => $indexName]
-            );
-            
-            $storeSizeValues[] = new MetricValue(
-                (float) $storeSize,
-                ['index' => $indexName]
-            );
+            $docCountGauge->set((float) ($indexStats['primaries']['docs']['count'] ?? 0), [(string) $indexName]);
+            $storeSizeGauge->set((float) ($indexStats['primaries']['store']['size_in_bytes'] ?? 0), [(string) $indexName]);
         }
-        
-        if (!empty($docCountValues)) {
-            $metrics[] = $this->createMetric(
-                'opensearch_index_documents_count',
-                $docCountValues,
-                'Number of documents in each OpenSearch index',
-                Metric::TYPE_GAUGE
-            );
-        }
-        
-        if (!empty($storeSizeValues)) {
-            $metrics[] = $this->createMetric(
-                'opensearch_index_size_bytes',
-                $storeSizeValues,
-                'Size of each OpenSearch index in bytes',
-                Metric::TYPE_GAUGE
-            );
-        }
-        
-        // Total metrics
-        $totalDocs = $indicesStats['_all']['primaries']['docs']['count'] ?? 0;
-        $totalSize = $indicesStats['_all']['primaries']['store']['size_in_bytes'] ?? 0;
-        
-        $metrics[] = $this->createGauge(
-            'opensearch_documents_total',
-            (float) $totalDocs,
-            'Total number of documents across all indices'
-        );
-        
-        $metrics[] = $this->createGauge(
-            'opensearch_size_bytes_total',
-            (float) $totalSize,
-            'Total size of all indices in bytes'
-        );
-        
-        // Count the total number of indices
-        $indexCount = count($indicesStats['indices'] ?? []);
-        $metrics[] = $this->createGauge(
-            'opensearch_indices_count',
-            (float) $indexCount,
-            'Total number of indices'
-        );
-        
-        return $metrics;
+
+        $gauge = static function (string $name, string $help, float $value) use ($registry): void {
+            $registry->getOrRegisterGauge('', $name, $help)->set($value);
+        };
+
+        $gauge('opensearch_documents_total', 'Total number of documents across all indices', (float) ($indicesStats['_all']['primaries']['docs']['count'] ?? 0));
+        $gauge('opensearch_size_bytes_total', 'Total size of all indices in bytes', (float) ($indicesStats['_all']['primaries']['store']['size_in_bytes'] ?? 0));
+        $gauge('opensearch_indices_count', 'Total number of indices', (float) \count($indicesStats['indices']));
     }
 }

@@ -2,104 +2,95 @@
 
 namespace Shopware\PrometheusExporter\Controller;
 
+use Prometheus\CollectorRegistry;
+use Prometheus\RenderTextFormat;
+use Prometheus\Storage\InMemory;
+use Psr\Log\LoggerInterface;
 use Shopware\PrometheusExporter\Metrics\MetricProviderInterface;
-use Shopware\PrometheusExporter\Metrics\Struct\Metric;
-use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\DependencyInjection\Attribute\TaggedIterator;
 use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * @internal
+ */
 #[Route(defaults: ['_routeScope' => ['api']])]
-class MetricsController extends AbstractController
+class MetricsController
 {
     /**
      * @param iterable<MetricProviderInterface> $metricProviders
      * @param array<string> $allowedIps
      */
     public function __construct(
-        #[TaggedIterator('shopware.prometheus.metrics')]
+        private readonly CollectorRegistry $registry,
         private readonly iterable $metricProviders,
         private readonly array $allowedIps,
+        private readonly ?string $authToken,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
     #[Route(path: '/api/_internal/prometheus', name: 'prometheus.metrics', methods: ['GET'], defaults: ['auth_required' => false])]
     public function metrics(Request $request): Response
     {
-        // Check IP restriction
-        $clientIp = $request->getClientIp();
-        if ($clientIp === null || !$this->isIpAllowed($clientIp)) {
-            return new Response('Access denied', Response::HTTP_FORBIDDEN);
+        // every configured check must pass; both unset means an open endpoint (warned below)
+        if ($this->authToken !== null && !$this->isTokenValid($request)) {
+            return new Response(null, Response::HTTP_UNAUTHORIZED);
         }
-        
-        $allMetrics = [];
-        
+
+        if ($this->allowedIps !== [] && !$this->isIpAllowed($request)) {
+            return new Response(null, Response::HTTP_FORBIDDEN);
+        }
+
+        if ($this->authToken === null && $this->allowedIps === []) {
+            $this->logger->warning('The Prometheus metrics endpoint is reachable without auth_token or allowed_ips restriction.');
+        }
+
+        $samples = [...$this->registry->getMetricFamilySamples(), ...$this->collectScrapeTimeSamples()];
+
+        return new Response(
+            (new RenderTextFormat())->render($samples),
+            Response::HTTP_OK,
+            ['Content-Type' => RenderTextFormat::MIME_TYPE],
+        );
+    }
+
+    /**
+     * @return list<\Prometheus\MetricFamilySamples>
+     */
+    private function collectScrapeTimeSamples(): array
+    {
+        $localRegistry = new CollectorRegistry(new InMemory(), registerDefaultMetrics: false);
+
         foreach ($this->metricProviders as $provider) {
-            $metrics = $provider->getMetrics();
-            
-            foreach ($metrics as $metric) {
-                $allMetrics[] = $metric;
+            try {
+                $provider->collect($localRegistry);
+            } catch (\Throwable $e) {
+                $this->logger->warning('Prometheus scrape-time metric provider failed.', [
+                    'provider' => $provider::class,
+                    'exception' => $e,
+                ]);
             }
         }
-        
-        $response = new Response($this->formatMetrics($allMetrics));
-        $response->headers->set('Content-Type', 'text/plain; version=0.0.4');
-        
-        return $response;
+
+        return \array_values($localRegistry->getMetricFamilySamples());
     }
-    
-    /**
-     * Check if the given IP is allowed to access the metrics endpoint
-     */
-    private function isIpAllowed(string $ip): bool
+
+    private function isTokenValid(Request $request): bool
     {
-        // Make sure localhost is always allowed
-        $allowedIps = array_merge($this->allowedIps, ['127.0.0.1', '::1', 'localhost']);
-        return IpUtils::checkIp($ip, $allowedIps);
-    }
-    
-    /**
-     * @param array<Metric> $metrics
-     */
-    private function formatMetrics(array $metrics): string
-    {
-        $lines = [];
-        
-        foreach ($metrics as $metric) {
-            $name = $metric->getName();
-            $help = $metric->getHelp();
-            $type = $metric->getType();
-            
-            // Add metric header lines
-            $lines[] = "# HELP $name $help";
-            $lines[] = "# TYPE $name $type";
-            
-            // Add metric values
-            foreach ($metric->getValues() as $value) {
-                $labelString = '';
-                $labels = $value->getLabels();
-                
-                if (!empty($labels)) {
-                    $labelParts = [];
-                    
-                    foreach ($labels as $labelName => $labelValue) {
-                        // Ensure labelValue is a string
-                        $labelValueString = (string) $labelValue;
-                        $labelParts[] = $labelName . '="' . str_replace('"', '\\"', $labelValueString) . '"';
-                    }
-                    
-                    $labelString = '{' . implode(',', $labelParts) . '}';
-                }
-                
-                $lines[] = $name . $labelString . ' ' . $value->getValue();
-            }
-            
-            // Add empty line between metrics
-            $lines[] = '';
+        $header = (string) $request->headers->get('Authorization', '');
+        if (!\str_starts_with($header, 'Bearer ')) {
+            return false;
         }
-        
-        return implode("\n", $lines);
+
+        return \hash_equals((string) $this->authToken, \substr($header, \strlen('Bearer ')));
+    }
+
+    private function isIpAllowed(Request $request): bool
+    {
+        $clientIp = $request->getClientIp();
+
+        return $clientIp !== null && IpUtils::checkIp($clientIp, $this->allowedIps);
     }
 }

@@ -2,70 +2,42 @@
 
 namespace Shopware\PrometheusExporter\Metrics;
 
-use Shopware\PrometheusExporter\Metrics\Struct\Metric;
+use Prometheus\CollectorRegistry;
 
 /**
+ * Prefer scraping the native PHP-FPM status page (`pm.status_path` with `?openmetrics`,
+ * PHP >= 8.1) directly; this provider only exists for setups where that page cannot be
+ * exposed to Prometheus.
+ *
  * @internal
  */
-class PHPFPMMetricProvider extends AbstractMetricProvider
+class PHPFPMMetricProvider implements MetricProviderInterface
 {
-    /**
-     * @return array<Metric>
-     */
-    public function getMetrics(): array
+    private const GAUGES = [
+        'phpfpm_listen_queue' => ['listen-queue', 'Number of requests in the queue of pending connections'],
+        'phpfpm_active_processes' => ['active-processes', 'Number of active processes'],
+        'phpfpm_idle_processes' => ['idle-processes', 'Number of idle processes'],
+        'phpfpm_total_processes' => ['total-processes', 'Total number of processes'],
+        'phpfpm_max_active_processes' => ['max-active-processes', 'Maximum number of active processes since FPM start'],
+        'phpfpm_max_children_reached' => ['max-children-reached', 'Number of times the process limit has been reached'],
+        'phpfpm_slow_requests' => ['slow-requests', 'Number of requests that exceeded the request_slowlog_timeout value'],
+    ];
+
+    public function collect(CollectorRegistry $registry): void
     {
-        if (!function_exists('fpm_get_status')) {
-            return [];
+        if (!\function_exists('fpm_get_status')) {
+            return;
         }
 
         $status = @fpm_get_status();
-        if (!$status) {
-            return [];
+        if (!\is_array($status)) {
+            return;
         }
 
-        return [
-            // Add basic status metrics
-            $this->createGauge(
-                'phpfpm_listen_queue',
-                (float) ($status['listen_queue'] ?? 0),
-                'Number of requests in the queue of pending connections'
-            ),
-
-            $this->createGauge(
-                'phpfpm_active_processes',
-                (float) ($status['active processes'] ?? 0),
-                'Number of active processes'
-            ),
-
-            $this->createGauge(
-                'phpfpm_idle_processes',
-                (float) ($status['idle processes'] ?? 0),
-                'Number of idle processes'
-            ),
-
-            $this->createGauge(
-                'phpfpm_total_processes',
-                (float) ($status['total processes'] ?? 0),
-                'Total number of processes'
-            ),
-
-            $this->createGauge(
-                'phpfpm_max_active_processes',
-                (float) ($status['max active processes'] ?? 0),
-                'Maximum number of active processes since FPM start'
-            ),
-
-            $this->createGauge(
-                'phpfpm_max_children_reached',
-                (float) ($status['max children reached'] ?? 0),
-                'Number of times the process limit has been reached'
-            ),
-
-            $this->createGauge(
-                'phpfpm_slow_requests',
-                (float) ($status['slow requests'] ?? 0),
-                'Number of requests that exceeded the request_slowlog_timeout value'
-            ),
-        ];
+        foreach (self::GAUGES as $name => [$statusKey, $help]) {
+            $registry
+                ->getOrRegisterGauge('', $name, $help)
+                ->set((float) $status[$statusKey]);
+        }
     }
 }

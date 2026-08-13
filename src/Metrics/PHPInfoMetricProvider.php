@@ -2,197 +2,90 @@
 
 namespace Shopware\PrometheusExporter\Metrics;
 
-use Shopware\PrometheusExporter\Metrics\Struct\Metric;
-use Shopware\PrometheusExporter\Metrics\Struct\MetricValue;
+use Prometheus\CollectorRegistry;
 
 /**
  * @internal
  */
-class PHPInfoMetricProvider extends AbstractMetricProvider
+class PHPInfoMetricProvider implements MetricProviderInterface
 {
-    /**
-     * @return array<Metric>
-     */
-    public function getMetrics(): array
+    public function collect(CollectorRegistry $registry): void
     {
-        $metrics = [];
-        
-        // Add PHP version info
-        $metrics[] = $this->getPhpVersionMetric();
-        
-        // Add OPcache metrics if available
-        if (function_exists('opcache_get_status') && function_exists('opcache_get_configuration')) {
-            $opcacheMetrics = $this->getOpcacheMetrics();
-            foreach ($opcacheMetrics as $metric) {
-                $metrics[] = $metric;
+        $this->collectPhpVersion($registry);
+
+        if (\function_exists('opcache_get_status') && \function_exists('opcache_get_configuration')) {
+            $this->collectOpcache($registry);
+        }
+    }
+
+    private function collectPhpVersion(CollectorRegistry $registry): void
+    {
+        $versionParts = \explode('.', \PHP_VERSION);
+
+        $registry
+            ->getOrRegisterGauge('', 'php_version_info', 'PHP version information', [
+                'version', 'major', 'minor', 'patch', 'sapi', 'zts', 'debug',
+            ])
+            ->set(1.0, [
+                \PHP_VERSION,
+                $versionParts[0] ?? '0',
+                $versionParts[1] ?? '0',
+                $versionParts[2] ?? '0',
+                \PHP_SAPI,
+                \PHP_ZTS === 1 ? 'true' : 'false',
+                \PHP_DEBUG === 1 ? 'true' : 'false',
+            ]);
+    }
+
+    private function collectOpcache(CollectorRegistry $registry): void
+    {
+        $status = \opcache_get_status(false);
+        $config = \opcache_get_configuration();
+
+        if (!\is_array($status) || !\is_array($config)) {
+            return;
+        }
+
+        $gauge = static function (string $name, string $help, float $value) use ($registry): void {
+            $registry->getOrRegisterGauge('', $name, $help)->set($value);
+        };
+
+        $memoryUsage = $status['memory_usage'] ?? null;
+        if (\is_array($memoryUsage)) {
+            $gauge('opcache_memory_used_bytes', 'OPcache memory used in bytes', (float) ($memoryUsage['used_memory'] ?? 0));
+            $gauge('opcache_memory_free_bytes', 'OPcache memory free in bytes', (float) ($memoryUsage['free_memory'] ?? 0));
+            $gauge('opcache_memory_wasted_bytes', 'OPcache memory wasted in bytes', (float) ($memoryUsage['wasted_memory'] ?? 0));
+
+            if (isset($memoryUsage['current_wasted_percentage'])) {
+                $gauge('opcache_memory_wasted_percentage', 'OPcache memory wasted as percentage', (float) $memoryUsage['current_wasted_percentage']);
             }
         }
-        
-        return $metrics;
-    }
-    
-    private function getPhpVersionMetric(): Metric
-    {
-        $versionParts = explode('.', PHP_VERSION);
-        $versionMajor = (int) ($versionParts[0] ?? 0);
-        $versionMinor = (int) ($versionParts[1] ?? 0);
-        $versionPatch = (int) ($versionParts[2] ?? 0);
-        
-        return $this->createGauge(
-            'php_version_info',
-            1.0, // Use 1.0 as a constant value since this is an info metric
-            'PHP version information',
-            [
-                'version' => PHP_VERSION,
-                'major' => $versionMajor,
-                'minor' => $versionMinor,
-                'patch' => $versionPatch,
-                'sapi' => PHP_SAPI,
-                'zts' => PHP_ZTS ? 'true' : 'false',
-                'debug' => PHP_DEBUG ? 'true' : 'false',
-            ]
-        );
-    }
-    
-    /**
-     * @return array<Metric>
-     */
-    private function getOpcacheMetrics(): array
-    {
-        $metrics = [];
-        
-        try {
-            $status = opcache_get_status(false);
-            $config = opcache_get_configuration();
-            
-            if (!is_array($status) || !is_array($config)) {
-                return [];
+
+        $statistics = $status['opcache_statistics'] ?? null;
+        if (\is_array($statistics)) {
+            $gauge('opcache_hits', 'OPcache hits', (float) ($statistics['hits'] ?? 0));
+            $gauge('opcache_misses', 'OPcache misses', (float) ($statistics['misses'] ?? 0));
+
+            $lookups = ($statistics['hits'] ?? 0) + ($statistics['misses'] ?? 0);
+            if ($lookups > 0) {
+                $gauge('opcache_hit_rate_percentage', 'OPcache hit rate as percentage', $statistics['hits'] / $lookups * 100);
             }
-            
-            // OPcache memory usage
-            $memoryUsage = $status['memory_usage'] ?? [];
-            if (is_array($memoryUsage)) {
-                $metrics[] = $this->createGauge(
-                    'opcache_memory_used_bytes',
-                    (float) ($memoryUsage['used_memory'] ?? 0),
-                    'OPcache memory used in bytes'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_memory_free_bytes',
-                    (float) ($memoryUsage['free_memory'] ?? 0),
-                    'OPcache memory free in bytes'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_memory_wasted_bytes',
-                    (float) ($memoryUsage['wasted_memory'] ?? 0),
-                    'OPcache memory wasted in bytes'
-                );
-                
-                if (isset($memoryUsage['current_wasted_percentage'])) {
-                    $metrics[] = $this->createGauge(
-                        'opcache_memory_wasted_percentage',
-                        (float) $memoryUsage['current_wasted_percentage'],
-                        'OPcache memory wasted as percentage'
-                    );
-                }
+
+            $gauge('opcache_scripts_count', 'Number of scripts cached in OPcache', (float) ($statistics['num_cached_scripts'] ?? 0));
+            $gauge('opcache_keys_count', 'Number of keys cached in OPcache', (float) ($statistics['num_cached_keys'] ?? 0));
+            $gauge('opcache_max_keys_count', 'Maximum number of keys that can be cached in OPcache', (float) ($statistics['max_cached_keys'] ?? 0));
+
+            if (($statistics['max_cached_keys'] ?? 0) > 0) {
+                $gauge('opcache_fullness_percentage', 'OPcache fullness as percentage (cached keys / max keys)', ($statistics['num_cached_keys'] ?? 0) / $statistics['max_cached_keys'] * 100);
             }
-            
-            // OPcache statistics
-            $statistics = $status['opcache_statistics'] ?? [];
-            if (is_array($statistics)) {
-                $metrics[] = $this->createGauge(
-                    'opcache_hits',
-                    (float) ($statistics['hits'] ?? 0),
-                    'OPcache hits'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_misses',
-                    (float) ($statistics['misses'] ?? 0),
-                    'OPcache misses'
-                );
-                
-                if (isset($statistics['hits'], $statistics['misses']) 
-                    && ($statistics['hits'] + $statistics['misses']) > 0) {
-                    $hitRate = $statistics['hits'] / ($statistics['hits'] + $statistics['misses']) * 100;
-                    $metrics[] = $this->createGauge(
-                        'opcache_hit_rate_percentage',
-                        $hitRate,
-                        'OPcache hit rate as percentage'
-                    );
-                }
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_scripts_count',
-                    (float) ($statistics['num_cached_scripts'] ?? 0),
-                    'Number of scripts cached in OPcache'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_keys_count',
-                    (float) ($statistics['num_cached_keys'] ?? 0),
-                    'Number of keys cached in OPcache'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_max_keys_count',
-                    (float) ($statistics['max_cached_keys'] ?? 0),
-                    'Maximum number of keys that can be cached in OPcache'
-                );
-                
-                // Calculate OPcache fullness percentage
-                if (isset($statistics['num_cached_keys'], $statistics['max_cached_keys']) 
-                    && $statistics['max_cached_keys'] > 0) {
-                    $fullnessPercentage = ($statistics['num_cached_keys'] / $statistics['max_cached_keys']) * 100;
-                    $metrics[] = $this->createGauge(
-                        'opcache_fullness_percentage',
-                        $fullnessPercentage,
-                        'OPcache fullness as percentage (cached keys / max keys)'
-                    );
-                }
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_restarts_count',
-                    (float) ($statistics['oom_restarts'] ?? 0),
-                    'Number of out-of-memory restarts of OPcache'
-                );
-            }
-            
-            // OPcache configuration
-            if (isset($config['directives'])) {
-                $enabled = (int) ($config['directives']['opcache.enable'] ?? 0);
-                $metrics[] = $this->createGauge(
-                    'opcache_enabled',
-                    (float) $enabled,
-                    'Flag indicating if OPcache is enabled'
-                );
-                
-                // Memory configuration
-                $metrics[] = $this->createGauge(
-                    'opcache_memory_size_bytes',
-                    (float) ($config['directives']['opcache.memory_consumption'] ?? 0) * 1024 * 1024,
-                    'OPcache memory size in bytes'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_max_accelerated_files',
-                    (float) ($config['directives']['opcache.max_accelerated_files'] ?? 0),
-                    'Maximum number of files that can be accelerated by OPcache'
-                );
-                
-                $metrics[] = $this->createGauge(
-                    'opcache_max_wasted_percentage',
-                    (float) ($config['directives']['opcache.max_wasted_percentage'] ?? 0),
-                    'Maximum percentage of wasted memory before OPcache restarts'
-                );
-            }
-        } catch (\Throwable $e) {
-            // In case of any error accessing OPcache status, return empty metrics
-            return [];
+
+            $gauge('opcache_restarts_count', 'Number of out-of-memory restarts of OPcache', (float) ($statistics['oom_restarts'] ?? 0));
         }
-        
-        return $metrics;
+
+        $directives = $config['directives'];
+        $gauge('opcache_enabled', 'Flag indicating if OPcache is enabled', $directives['opcache.enable'] ? 1.0 : 0.0);
+        $gauge('opcache_memory_size_bytes', 'OPcache memory size in bytes', (float) $directives['opcache.memory_consumption'] * 1024 * 1024);
+        $gauge('opcache_max_accelerated_files', 'Maximum number of files that can be accelerated by OPcache', (float) $directives['opcache.max_accelerated_files']);
+        $gauge('opcache_max_wasted_percentage', 'Maximum percentage of wasted memory before OPcache restarts', $directives['opcache.max_wasted_percentage']);
     }
 }
