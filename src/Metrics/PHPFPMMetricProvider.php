@@ -4,6 +4,9 @@ namespace Shopware\PrometheusExporter\Metrics;
 
 use Shopware\PrometheusExporter\Metrics\Struct\Metric;
 
+/**
+ * @internal
+ */
 class PHPFPMMetricProvider extends AbstractMetricProvider
 {
     /**

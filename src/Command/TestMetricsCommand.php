@@ -10,33 +10,34 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\HttpFoundation\Request;
 
+/**
+ * @internal
+ */
 #[AsCommand(
     name: 'prometheus:test-metrics',
     description: 'Test the Prometheus metrics endpoint output',
 )]
 class TestMetricsCommand extends Command
 {
-    public function __construct(
-        private readonly MetricsController $metricsController
-    ) {
+    public function __construct(private readonly MetricsController $metricsController)
+    {
         parent::__construct();
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
-        
-        // Create a dummy Request with localhost IP
-        $request = Request::create('/api/_internal/prometheus', 'GET');
-        $request->server->set('REMOTE_ADDR', '127.0.0.1'); // Set localhost IP
-        
+
+        // localhost passes the default endpoint guard
+        $request = Request::create('/api/_internal/prometheus', Request::METHOD_GET, server: ['REMOTE_ADDR' => '127.0.0.1']);
+
         $response = $this->metricsController->metrics($request);
-        
+
         $io->section('Prometheus Metrics Output');
-        $io->writeln($response->getContent());
-        
+        $io->writeln((string) $response->getContent());
+
         $io->success('Metrics endpoint is working correctly.');
-        
+
         return Command::SUCCESS;
     }
 }

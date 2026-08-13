@@ -5,6 +5,9 @@ namespace Shopware\PrometheusExporter\Metrics;
 use Shopware\PrometheusExporter\Metrics\Struct\Metric;
 use Shopware\PrometheusExporter\Metrics\Struct\MetricValue;
 
+/**
+ * @internal
+ */
 abstract class AbstractMetricProvider implements MetricProviderInterface
 {
     public function getName(): string

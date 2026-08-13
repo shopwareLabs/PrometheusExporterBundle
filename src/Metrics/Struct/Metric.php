@@ -3,6 +3,8 @@
 namespace Shopware\PrometheusExporter\Metrics\Struct;
 
 /**
+ * @internal
+ *
  * Represents a Prometheus metric with its metadata and values
  */
 class Metric

@@ -9,6 +9,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 use OpenSearch\Client as OpenSearchClient;
 use Psr\Container\ContainerInterface;
 
+/**
+ * @internal
+ */
 class OpenSearchMetricProvider extends AbstractMetricProvider
 {
     /**
