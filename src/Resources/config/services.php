@@ -12,6 +12,7 @@ use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
 use Shopware\PrometheusExporter\Storage\RegistryFactory;
+use Shopware\PrometheusExporter\Telemetry\PrometheusTransportFactory;
 
 return static function (ContainerConfigurator $container): void {
     $services = $container->services();
@@ -29,6 +30,14 @@ return static function (ContainerConfigurator $container): void {
     $services->set('prometheus_exporter.collector_registry', CollectorRegistry::class)
         ->lazy()
         ->factory([service(RegistryFactory::class), 'create']);
+
+    // Telemetry transport
+    $services->set(PrometheusTransportFactory::class)
+        ->args([
+            service('prometheus_exporter.collector_registry'),
+            param('prometheus_exporter.transport.write_mode'),
+        ])
+        ->tag('shopware.metric_transport_factory');
 
     // Controller
     $services->set(MetricsController::class)
