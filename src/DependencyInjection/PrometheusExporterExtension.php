@@ -2,26 +2,20 @@
 
 namespace Shopware\PrometheusExporter\DependencyInjection;
 
-use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
-use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
-use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
-use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
-use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
-use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 
 /**
+ * Maps the semantic bundle configuration to container parameters.
+ *
+ * Service definitions are NOT loaded here: Shopware's Bundle::build() already loads
+ * Resources/config/services.php into the main container. Anything conditional on the
+ * configuration (e.g. the scrape-provider toggles) must happen in a compiler pass.
+ *
  * @internal
  */
 class PrometheusExporterExtension extends Extension
 {
-    private const SCRAPE_PROVIDERS = [
-        'opcache' => PHPInfoMetricProvider::class,
-        'php_fpm' => PHPFPMMetricProvider::class,
-        'opensearch' => OpenSearchMetricProvider::class,
-    ];
-
     /**
      * @param array<mixed> $configs
      */
@@ -29,27 +23,13 @@ class PrometheusExporterExtension extends Extension
     {
         $config = $this->processConfiguration(new Configuration(), $configs);
 
-        if ($config['storage']['dsn'] === null && $config['storage']['redis_connection_name'] === null) {
-            throw new InvalidConfigurationException(
-                'prometheus_exporter.storage: either "dsn" or "redis_connection_name" must be configured'
-            );
-        }
-
         $container->setParameter('prometheus_exporter.storage.redis_connection_name', $config['storage']['redis_connection_name']);
         $container->setParameter('prometheus_exporter.storage.dsn', $config['storage']['dsn']);
         $container->setParameter('prometheus_exporter.storage.key_prefix', $config['storage']['key_prefix']);
         $container->setParameter('prometheus_exporter.transport.write_mode', $config['transport']['write_mode']);
         $container->setParameter('prometheus_exporter.endpoint.allowed_ips', $config['endpoint']['allowed_ips']);
         $container->setParameter('prometheus_exporter.endpoint.auth_token', $config['endpoint']['auth_token']);
-
-        $loader = new PhpFileLoader($container, new FileLocator(__DIR__ . '/../Resources/config'));
-        $loader->load('services.php');
-
-        foreach (self::SCRAPE_PROVIDERS as $configKey => $providerClass) {
-            if (!$config['scrape_providers'][$configKey]) {
-                $container->removeDefinition($providerClass);
-            }
-        }
+        $container->setParameter('prometheus_exporter.scrape_providers', $config['scrape_providers']);
     }
 
     public function getAlias(): string

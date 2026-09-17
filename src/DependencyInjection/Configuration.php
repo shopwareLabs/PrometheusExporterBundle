@@ -16,6 +16,12 @@ class Configuration implements ConfigurationInterface
         $rootNode = $treeBuilder->getRootNode();
 
         $rootNode
+            // root-level on purpose: a validate() on the storage node itself is skipped
+            // when the "storage" key is absent (defaults bypass node validation)
+            ->validate()
+                ->ifTrue(static fn (array $config): bool => $config['storage']['dsn'] === null && $config['storage']['redis_connection_name'] === null)
+                ->thenInvalid('storage: either "dsn" or "redis_connection_name" must be configured')
+            ->end()
             ->children()
                 ->arrayNode('storage')
                     ->addDefaultsIfNotSet()
@@ -59,12 +65,10 @@ class Configuration implements ConfigurationInterface
                     ->end()
                 ->end()
                 ->arrayNode('scrape_providers')
-                    ->addDefaultsIfNotSet()
-                    ->children()
-                        ->booleanNode('opcache')->defaultFalse()->end()
-                        ->booleanNode('php_fpm')->defaultFalse()->end()
-                        ->booleanNode('opensearch')->defaultFalse()->end()
-                    ->end()
+                    ->useAttributeAsKey('name')
+                    ->normalizeKeys(false)
+                    ->booleanPrototype()->end()
+                    ->info('Enable scrape-time metric providers by name (built-in: opcache, php_fpm, opensearch); all are disabled by default.')
                 ->end()
             ->end();
 

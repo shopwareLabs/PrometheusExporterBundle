@@ -3,13 +3,14 @@
 namespace Shopware\PrometheusExporter\Tests\Controller;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 use Prometheus\CollectorRegistry;
 use Prometheus\Storage\InMemory;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Shopware\PrometheusExporter\Controller\MetricsController;
-use Shopware\PrometheusExporter\Metrics\MetricProviderInterface;
+use Shopware\PrometheusExporter\Metrics\MetricsCollector;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -17,6 +18,7 @@ use Symfony\Component\HttpFoundation\Response;
  * @internal
  */
 #[CoversClass(MetricsController::class)]
+#[UsesClass(MetricsCollector::class)]
 class MetricsControllerTest extends TestCase
 {
     private CollectorRegistry $registry;
@@ -62,63 +64,26 @@ class MetricsControllerTest extends TestCase
         static::assertSame(Response::HTTP_OK, $controller->metrics($this->request())->getStatusCode());
     }
 
-    public function testRendersStoredAndScrapeTimeMetricsInOnePass(): void
+    public function testRespondsWithRenderedMetricsAndPrometheusContentType(): void
     {
         $this->registry->getOrRegisterCounter('', 'stored_metric', 'stored')->incBy(3);
 
-        $provider = new class implements MetricProviderInterface {
-            public function collect(CollectorRegistry $registry): void
-            {
-                $registry->getOrRegisterGauge('', 'local_metric', 'scrape-time')->set(1.0);
-            }
-        };
+        $response = $this->createController()->metrics($this->request(ip: '127.0.0.1'));
 
-        $response = $this->createController(providers: [$provider])->metrics($this->request(ip: '127.0.0.1'));
-
-        $body = (string) $response->getContent();
         static::assertStringContainsString('text/plain; version=0.0.4', (string) $response->headers->get('Content-Type'));
-        static::assertStringContainsString('stored_metric 3', $body);
-        static::assertStringContainsString('local_metric 1', $body);
-    }
-
-    public function testFailingProviderDoesNotBreakTheScrape(): void
-    {
-        $failing = new class implements MetricProviderInterface {
-            public function collect(CollectorRegistry $registry): void
-            {
-                throw new \RuntimeException('boom');
-            }
-        };
-        $working = new class implements MetricProviderInterface {
-            public function collect(CollectorRegistry $registry): void
-            {
-                $registry->getOrRegisterGauge('', 'local_metric', 'scrape-time')->set(1.0);
-            }
-        };
-
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('warning');
-
-        $response = $this->createController(providers: [$failing, $working], logger: $logger)
-            ->metrics($this->request(ip: '127.0.0.1'));
-
-        static::assertSame(Response::HTTP_OK, $response->getStatusCode());
-        static::assertStringContainsString('local_metric 1', (string) $response->getContent());
+        static::assertStringContainsString('stored_metric 3', (string) $response->getContent());
     }
 
     /**
-     * @param list<MetricProviderInterface> $providers
      * @param array<string> $allowedIps
      */
     private function createController(
-        array $providers = [],
         array $allowedIps = ['127.0.0.1'],
         ?string $authToken = null,
         ?LoggerInterface $logger = null,
     ): MetricsController {
         return new MetricsController(
-            $this->registry,
-            $providers,
+            new MetricsCollector($this->registry, [], new NullLogger()),
             $allowedIps,
             $authToken,
             $logger ?? new NullLogger(),

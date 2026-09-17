@@ -58,6 +58,13 @@ WorkerRunningEvent ────► flush() ──► promphp Redis ◄──┤
    telemetry — so the sanctioned path for plugins is core `Meter`/`Telemetry`, and providers stay a
    bundle-internal escape hatch for host-local process data that cannot flow through core (OPcache,
    FPM). Opening the interface later is BC-safe if a genuine need appears; closing it wouldn't be.
+   The `scrape_providers` toggles are applied in a compiler pass (`ScrapeProviderPass`) — Shopware's
+   `Bundle::build()` loads `services.php` into the main container, so extension-time definition
+   removal would be lost on the extension-container merge. Each provider declares its toggle name in
+   the `provider` attribute of its `shopware.prometheus.metrics` tag; the pass fails the build on
+   unknown configured names and duplicate names, and reserves bare names for the bundle's own
+   classes — a provider registered from any other namespace must use a vendor-prefixed name
+   (`<vendor>.<name>`), a defensive guard given the interface is not an extension point.
 6. **Console commands** — `prometheus:test-metrics` (kept from the PoC: fakes a localhost request and
    prints the endpoint response, a quick way to inspect what a scrape would return),
    `prometheus:clear-storage` (`$registry->wipeStorage()`).
@@ -136,7 +143,7 @@ prometheus_exporter:
     endpoint:
         allowed_ips: ['127.0.0.1', '::1']
         auth_token: null              # null = check off; string = required Bearer token
-    scrape_providers:                 # per-scraped-host, computed live per scrape
+    scrape_providers:                 # per-scraped-host metrics, computed live per scrape
         opcache: false
         php_fpm: false
         opensearch: false

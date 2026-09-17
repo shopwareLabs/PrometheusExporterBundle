@@ -2,11 +2,9 @@
 
 namespace Shopware\PrometheusExporter\Controller;
 
-use Prometheus\CollectorRegistry;
 use Prometheus\RenderTextFormat;
-use Prometheus\Storage\InMemory;
 use Psr\Log\LoggerInterface;
-use Shopware\PrometheusExporter\Metrics\MetricProviderInterface;
+use Shopware\PrometheusExporter\Metrics\MetricsCollector;
 use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,12 +17,10 @@ use Symfony\Component\Routing\Attribute\Route;
 class MetricsController
 {
     /**
-     * @param iterable<MetricProviderInterface> $metricProviders
      * @param array<string> $allowedIps
      */
     public function __construct(
-        private readonly CollectorRegistry $registry,
-        private readonly iterable $metricProviders,
+        private readonly MetricsCollector $collector,
         private readonly array $allowedIps,
         private readonly ?string $authToken,
         private readonly LoggerInterface $logger,
@@ -47,34 +43,11 @@ class MetricsController
             $this->logger->warning('The Prometheus metrics endpoint is reachable without auth_token or allowed_ips restriction.');
         }
 
-        $samples = [...$this->registry->getMetricFamilySamples(), ...$this->collectScrapeTimeSamples()];
-
         return new Response(
-            (new RenderTextFormat())->render($samples),
+            $this->collector->render(),
             Response::HTTP_OK,
             ['Content-Type' => RenderTextFormat::MIME_TYPE],
         );
-    }
-
-    /**
-     * @return list<\Prometheus\MetricFamilySamples>
-     */
-    private function collectScrapeTimeSamples(): array
-    {
-        $localRegistry = new CollectorRegistry(new InMemory(), registerDefaultMetrics: false);
-
-        foreach ($this->metricProviders as $provider) {
-            try {
-                $provider->collect($localRegistry);
-            } catch (\Throwable $e) {
-                $this->logger->warning('Prometheus scrape-time metric provider failed.', [
-                    'provider' => $provider::class,
-                    'exception' => $e,
-                ]);
-            }
-        }
-
-        return \array_values($localRegistry->getMetricFamilySamples());
     }
 
     private function isTokenValid(Request $request): bool

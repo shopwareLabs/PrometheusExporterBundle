@@ -8,6 +8,7 @@ use Shopware\Core\Framework\Adapter\Redis\RedisConnectionProvider;
 use Shopware\PrometheusExporter\Command\ClearStorageCommand;
 use Shopware\PrometheusExporter\Command\TestMetricsCommand;
 use Shopware\PrometheusExporter\Controller\MetricsController;
+use Shopware\PrometheusExporter\Metrics\MetricsCollector;
 use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
@@ -39,28 +40,36 @@ return static function (ContainerConfigurator $container): void {
         ])
         ->tag('shopware.metric_transport_factory');
 
+    // Metrics collection & rendering
+    $services->set(MetricsCollector::class)
+        ->args([
+            service('prometheus_exporter.collector_registry'),
+            tagged_iterator('shopware.prometheus.metrics'),
+            service('logger'),
+        ]);
+
     // Controller
     $services->set(MetricsController::class)
         ->public()
         ->args([
-            service('prometheus_exporter.collector_registry'),
-            tagged_iterator('shopware.prometheus.metrics'),
+            service(MetricsCollector::class),
             param('prometheus_exporter.endpoint.allowed_ips'),
             param('prometheus_exporter.endpoint.auth_token'),
             service('logger'),
         ])
         ->tag('controller.service_arguments');
 
-    // Scrape-time metric providers (opt-in via prometheus_exporter.scrape_providers)
+    // Scrape-time metric providers, opt-in per "provider" name via
+    // prometheus_exporter.scrape_providers (applied in ScrapeProviderPass)
     $services->set(PHPInfoMetricProvider::class)
-        ->tag('shopware.prometheus.metrics');
+        ->tag('shopware.prometheus.metrics', ['provider' => 'opcache']);
 
     $services->set(PHPFPMMetricProvider::class)
-        ->tag('shopware.prometheus.metrics');
+        ->tag('shopware.prometheus.metrics', ['provider' => 'php_fpm']);
 
     $services->set(OpenSearchMetricProvider::class)
         ->args([service('service_container')])
-        ->tag('shopware.prometheus.metrics');
+        ->tag('shopware.prometheus.metrics', ['provider' => 'opensearch']);
 
     // Commands
     $services->set(ClearStorageCommand::class)

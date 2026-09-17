@@ -117,6 +117,13 @@ stored metrics):
 These providers are not an extension point: plugin metrics belong in the core telemetry abstraction,
 where every transport (Prometheus, OpenTelemetry, …) receives them.
 
+Provider names are declared in the `provider` attribute of the `shopware.prometheus.metrics` service
+tag and are validated at container build time: unknown names in `scrape_providers` and duplicate
+names fail the build, bare names are reserved for the bundle's built-in providers, and a provider
+registered outside this bundle must use a vendor-prefixed name (`<vendor>.<name>`).
+`bin/console debug:container --tag shopware.prometheus.metrics` lists every registered provider with
+its name and class.
+
 ## Metric naming
 
 Stored metric names are prefixed with the sanitized telemetry namespace
