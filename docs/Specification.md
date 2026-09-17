@@ -65,9 +65,10 @@ WorkerRunningEvent ────► flush() ──► promphp Redis ◄──┤
    unknown configured names and duplicate names, and reserves bare names for the bundle's own
    classes — a provider registered from any other namespace must use a vendor-prefixed name
    (`<vendor>.<name>`), a defensive guard given the interface is not an extension point.
-6. **Console commands** — `prometheus:test-metrics` (kept from the PoC: fakes a localhost request and
-   prints the endpoint response, a quick way to inspect what a scrape would return),
-   `prometheus:clear-storage` (`$registry->wipeStorage()`).
+6. **Console commands** — `prometheus:test-metrics` (simulates a scrape through the real controller,
+   guards included, and prints the endpoint response; sends the configured `auth_token` and a
+   localhost client IP by default, `--ip`/`--token` simulate other callers, non-200 responses fail
+   the command), `prometheus:clear-storage` (`$registry->wipeStorage()`).
 
 ### Metric mapping
 

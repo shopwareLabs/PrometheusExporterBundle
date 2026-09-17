@@ -77,6 +77,9 @@ return static function (ContainerConfigurator $container): void {
         ->tag('console.command');
 
     $services->set(TestMetricsCommand::class)
-        ->args([service(MetricsController::class)])
+        ->args([
+            service(MetricsController::class),
+            param('prometheus_exporter.endpoint.auth_token'),
+        ])
         ->tag('console.command');
 };

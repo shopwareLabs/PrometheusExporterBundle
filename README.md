@@ -151,8 +151,11 @@ scrape_configs:
 
 ## Commands
 
-- `bin/console prometheus:test-metrics` — fakes a localhost request against the metrics endpoint and
-  prints the response: a quick way to inspect what a scrape would return without HTTP access.
+- `bin/console prometheus:test-metrics` — simulates a scrape against the metrics endpoint (guards
+  included) and prints the response: a quick way to inspect what a scrape would return without HTTP
+  access. By default the request carries the configured `auth_token` and a localhost client IP;
+  `--ip` and `--token` simulate other callers, and a rejected request fails the command with the
+  status code and the guard that refused it.
 - `bin/console prometheus:clear-storage` — wipes all stored series. Use it to drop stale gauge label
   sets (for example after removing a messenger transport); counters restart from zero, which
   Prometheus `rate()` handles as a counter reset.
