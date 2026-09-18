@@ -43,6 +43,21 @@ class PrometheusExporterExtensionTest extends TestCase
         static::assertSame(['127.0.0.1', '::1'], $container->getParameter('prometheus_exporter.endpoint.allowed_ips'));
         static::assertNull($container->getParameter('prometheus_exporter.endpoint.auth_token'));
         static::assertSame(['php_fpm' => true], $container->getParameter('prometheus_exporter.scrape_providers'));
+        static::assertNull($container->getParameter('prometheus_exporter.scrape_metrics_namespace'), 'default is null = inherit the core telemetry namespace');
+    }
+
+    public function testMapsTheScrapeMetricsNamespace(): void
+    {
+        $container = new ContainerBuilder();
+
+        (new PrometheusExporterExtension())->load([
+            [
+                'storage' => ['dsn' => 'redis://localhost'],
+                'scrape_metrics_namespace' => '',
+            ],
+        ], $container);
+
+        static::assertSame('', $container->getParameter('prometheus_exporter.scrape_metrics_namespace'));
     }
 
     public function testScrapeProvidersDefault(): void

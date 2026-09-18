@@ -49,6 +49,7 @@ return static function (ContainerConfigurator $container): void {
             service('prometheus_exporter.collector_registry'),
             tagged_iterator('shopware.prometheus.metrics'),
             service('logger'),
+            abstract_arg('effective scrape metrics namespace, resolved by ScrapeProviderPass'),
         ]);
 
     // Controller

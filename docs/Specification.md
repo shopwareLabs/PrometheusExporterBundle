@@ -148,6 +148,8 @@ prometheus_exporter:
     endpoint:
         allowed_ips: ['127.0.0.1', '::1']
         auth_token: null              # null = check off; string = required Bearer token
+    scrape_metrics_namespace: null    # null = inherit shopware.telemetry.metrics.namespace,
+                                      # '' = no prefix, other string = custom prefix (sanitized)
     scrape_providers:                 # per-scraped-host metrics, computed live per scrape
         instance: false
         opcache: false

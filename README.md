@@ -60,6 +60,8 @@ prometheus_exporter:
     endpoint:
         allowed_ips: ['127.0.0.1', '::1']
         auth_token: null              # when set, scrapes need "Authorization: Bearer <token>"
+    scrape_metrics_namespace: null    # null = inherit shopware.telemetry.metrics.namespace,
+                                      # '' = no prefix, any other string = custom prefix
     scrape_providers:                 # host-local, computed live per scrape, all opt-in
         instance: false
         opcache: false
@@ -115,6 +117,11 @@ stored metrics):
 | `opcache` | `opcache_*`, `php_version_info` | OPcache state is not exposed by the FPM status page |
 | `php_fpm` | `phpfpm_*` | Prefer the native FPM status page (`pm.status_path` + `?openmetrics`, PHP ≥ 8.1) |
 | `opensearch` | `opensearch_*` | Prefer a dedicated infrastructure exporter next to the cluster |
+
+Provider metrics carry the `scrape_metrics_namespace` prefix (by default the telemetry namespace,
+e.g. `shopware_opcache_memory_used_bytes`). The metric schemas are this bundle's own — they are not
+compatible with community exporters for the same subsystems, and the default prefix makes that
+explicit and collision-free; set `scrape_metrics_namespace: ''` if you need bare subsystem names.
 
 These providers are not an extension point: plugin metrics belong in the core telemetry abstraction,
 where every transport (Prometheus, OpenTelemetry, …) receives them.
