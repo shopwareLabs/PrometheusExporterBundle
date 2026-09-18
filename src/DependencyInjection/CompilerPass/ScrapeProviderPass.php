@@ -2,6 +2,7 @@
 
 namespace Shopware\PrometheusExporter\DependencyInjection\CompilerPass;
 
+use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -37,6 +38,7 @@ class ScrapeProviderPass implements CompilerPassInterface
         $config = $container->hasParameter(self::PARAMETER) ? $container->getParameter(self::PARAMETER) : [];
 
         $providers = [];
+        $classes = [];
         foreach ($container->findTaggedServiceIds(self::TAG) as $serviceId => $tags) {
             $class = $container->getDefinition($serviceId)->getClass() ?? $serviceId;
 
@@ -70,7 +72,15 @@ class ScrapeProviderPass implements CompilerPassInterface
                 }
 
                 $providers[$name] = $serviceId;
+                $classes[$name] = $class;
             }
+        }
+
+        // disabled providers are removed below; hand the full map to prometheus:scrape-providers
+        // so it can still list them
+        if ($container->hasDefinition(ListScrapeProvidersCommand::class)) {
+            $container->getDefinition(ListScrapeProvidersCommand::class)
+                ->replaceArgument(0, $classes);
         }
 
         $unknown = \array_diff_key($config, $providers);

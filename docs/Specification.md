@@ -1,6 +1,6 @@
 # Prometheus Exporter — Telemetry v2 Integration Spec
 
-Status: **ready for implementation** · 2026-08-13 · supersedes the 2026-07-10 draft
+Status: **ready**
 
 ## Context
 
@@ -68,7 +68,9 @@ WorkerRunningEvent ────► flush() ──► promphp Redis ◄──┤
 6. **Console commands** — `prometheus:test-metrics` (simulates a scrape through the real controller,
    guards included, and prints the endpoint response; sends the configured `auth_token` and a
    localhost client IP by default, `--ip`/`--token` simulate other callers, non-200 responses fail
-   the command), `prometheus:clear-storage` (`$registry->wipeStorage()`).
+   the command), `prometheus:scrape-providers` (lists registered providers with toggle name, class,
+   and enabled state — the pass injects the full map into the command definition since disabled
+   providers are removed from the container), `prometheus:clear-storage` (`$registry->wipeStorage()`).
 
 ### Metric mapping
 

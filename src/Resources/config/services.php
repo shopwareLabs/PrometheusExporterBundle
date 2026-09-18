@@ -6,6 +6,7 @@ use Prometheus\CollectorRegistry;
 use Shopware\Core\Framework\Adapter\Cache\RedisConnectionFactory;
 use Shopware\Core\Framework\Adapter\Redis\RedisConnectionProvider;
 use Shopware\PrometheusExporter\Command\ClearStorageCommand;
+use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\Command\TestMetricsCommand;
 use Shopware\PrometheusExporter\Controller\MetricsController;
 use Shopware\PrometheusExporter\Metrics\MetricsCollector;
@@ -74,6 +75,13 @@ return static function (ContainerConfigurator $container): void {
     // Commands
     $services->set(ClearStorageCommand::class)
         ->args([service('prometheus_exporter.collector_registry')])
+        ->tag('console.command');
+
+    $services->set(ListScrapeProvidersCommand::class)
+        ->args([
+            abstract_arg('provider name => class map, injected by ScrapeProviderPass'),
+            param('prometheus_exporter.scrape_providers'),
+        ])
         ->tag('console.command');
 
     $services->set(TestMetricsCommand::class)

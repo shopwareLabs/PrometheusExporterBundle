@@ -4,11 +4,13 @@ namespace Shopware\PrometheusExporter\Tests\DependencyInjection;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\DependencyInjection\CompilerPass\ScrapeProviderPass;
 use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\DependencyInjection\Argument\AbstractArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
 
@@ -30,6 +32,26 @@ class ScrapeProviderPassTest extends TestCase
         static::assertTrue($container->hasDefinition('provider.php_fpm'));
         static::assertFalse($container->hasDefinition('provider.opcache'), 'explicitly disabled provider must be removed');
         static::assertFalse($container->hasDefinition('provider.opensearch'), 'omitted provider must stay opt-in');
+    }
+
+    public function testInjectsTheAvailableProviderMapIntoTheListCommand(): void
+    {
+        $container = $this->container(['php_fpm' => true]);
+        $this->registerProvider($container, 'provider.php_fpm', 'php_fpm');
+        $this->registerProvider($container, 'provider.opensearch', 'opensearch', OpenSearchMetricProvider::class);
+        $container->register(ListScrapeProvidersCommand::class)
+            ->setArguments([new AbstractArgument('injected by the pass'), []]);
+
+        (new ScrapeProviderPass())->process($container);
+
+        static::assertSame(
+            [
+                'php_fpm' => PHPFPMMetricProvider::class,
+                'opensearch' => OpenSearchMetricProvider::class,
+            ],
+            $container->getDefinition(ListScrapeProvidersCommand::class)->getArgument(0),
+            'the map must include providers that were removed as disabled',
+        );
     }
 
     public function testAllProvidersAreRemovedWhenTheBundleIsNotConfigured(): void

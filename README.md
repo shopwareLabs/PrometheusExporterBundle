@@ -156,6 +156,8 @@ scrape_configs:
   access. By default the request carries the configured `auth_token` and a localhost client IP;
   `--ip` and `--token` simulate other callers, and a rejected request fails the command with the
   status code and the guard that refused it.
+- `bin/console prometheus:scrape-providers` — lists every registered scrape-time provider (disabled
+  ones included) with its toggle name, class, and enabled state.
 - `bin/console prometheus:clear-storage` — wipes all stored series. Use it to drop stale gauge label
   sets (for example after removing a messenger transport); counters restart from zero, which
   Prometheus `rate()` handles as a counter reset.
