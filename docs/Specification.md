@@ -49,7 +49,9 @@ WorkerRunningEvent ────► flush() ──► promphp Redis ◄──┤
    the enabled scrape-time providers write into. No hand-rolled exposition rendering anywhere.
 5. **Scrape-time providers** — kept from the PoC, all **disabled by default**, computed live per scrape,
    per-scraped-host: `PHPInfoMetricProvider` (OPcache — not available via FPM status page),
-   `PHPFPMMetricProvider`, `OpenSearchMetricProvider`. Interface reworked to write into the passed
+   `PHPFPMMetricProvider`, `OpenSearchMetricProvider`, plus `InstanceMetricProvider` (app env,
+   Shopware/database versions, per-purpose Redis usage — app cache, session, cart, number range,
+   cache invalidation — and the OpenSearch flag; the instance-level metrics). Interface reworked to write into the passed
    registry (`collect(CollectorRegistry $registry): void`); the PoC's `Metric`/`MetricValue` structs and
    formatter are deleted. `QueueMetricProvider` is **deleted** (exact duplicate of core
    `messenger.queue.depth`).
@@ -147,6 +149,7 @@ prometheus_exporter:
         allowed_ips: ['127.0.0.1', '::1']
         auth_token: null              # null = check off; string = required Bearer token
     scrape_providers:                 # per-scraped-host metrics, computed live per scrape
+        instance: false
         opcache: false
         php_fpm: false
         opensearch: false

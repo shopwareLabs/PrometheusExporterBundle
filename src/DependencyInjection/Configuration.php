@@ -68,7 +68,7 @@ class Configuration implements ConfigurationInterface
                     ->useAttributeAsKey('name')
                     ->normalizeKeys(false)
                     ->booleanPrototype()->end()
-                    ->info('Enable scrape-time metric providers by name (built-in: opcache, php_fpm, opensearch); all are disabled by default.')
+                    ->info('Enable scrape-time metric providers by name (built-in: instance, opcache, php_fpm, opensearch); all are disabled by default.')
                 ->end()
             ->end();
 

@@ -6,6 +6,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\DependencyInjection\CompilerPass\ScrapeProviderPass;
+use Shopware\PrometheusExporter\Metrics\InstanceMetricProvider;
 use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
@@ -13,6 +14,7 @@ use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Argument\AbstractArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
+use Symfony\Component\DependencyInjection\Parameter;
 
 /**
  * @internal
@@ -128,6 +130,33 @@ class ScrapeProviderPassTest extends TestCase
 
         static::assertTrue($container->hasDefinition('provider.acme_search'));
         static::assertFalse($container->hasDefinition('provider.acme_queue'));
+    }
+
+    public function testResolvesTheElasticsearchEnabledFlagForTheInstanceProvider(): void
+    {
+        $container = $this->container(['instance' => true]);
+        $container->setParameter('elasticsearch.enabled', true);
+        $container->register(InstanceMetricProvider::class)
+            ->setArguments([null, new AbstractArgument('resolved by the pass')])
+            ->addTag(ScrapeProviderPass::TAG, ['provider' => 'instance']);
+
+        (new ScrapeProviderPass())->process($container);
+
+        $argument = $container->getDefinition(InstanceMetricProvider::class)->getArgument(1);
+        static::assertInstanceOf(Parameter::class, $argument);
+        static::assertSame('elasticsearch.enabled', (string) $argument);
+    }
+
+    public function testElasticsearchFlagDefaultsToFalseWithoutTheBundle(): void
+    {
+        $container = $this->container(['instance' => true]);
+        $container->register(InstanceMetricProvider::class)
+            ->setArguments([null, new AbstractArgument('resolved by the pass')])
+            ->addTag(ScrapeProviderPass::TAG, ['provider' => 'instance']);
+
+        (new ScrapeProviderPass())->process($container);
+
+        static::assertFalse($container->getDefinition(InstanceMetricProvider::class)->getArgument(1));
     }
 
     /**

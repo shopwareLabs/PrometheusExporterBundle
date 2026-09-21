@@ -3,10 +3,12 @@
 namespace Shopware\PrometheusExporter\DependencyInjection\CompilerPass;
 
 use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
+use Shopware\PrometheusExporter\Metrics\InstanceMetricProvider;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\InvalidArgumentException;
+use Symfony\Component\DependencyInjection\Parameter;
 
 /**
  * Applies the prometheus_exporter.scrape_providers toggles: every service tagged with
@@ -103,6 +105,15 @@ class ScrapeProviderPass implements CompilerPassInterface
             }
 
             $container->removeDefinition($serviceId);
+        }
+
+        // false when the Elasticsearch bundle is not installed; a plain param() reference in
+        // services.php would fail the build on installations without the bundle
+        if ($container->hasDefinition(InstanceMetricProvider::class)) {
+            $container->getDefinition(InstanceMetricProvider::class)->replaceArgument(
+                1,
+                $container->hasParameter('elasticsearch.enabled') ? new Parameter('elasticsearch.enabled') : false,
+            );
         }
     }
 }

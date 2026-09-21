@@ -61,6 +61,7 @@ prometheus_exporter:
         allowed_ips: ['127.0.0.1', '::1']
         auth_token: null              # when set, scrapes need "Authorization: Bearer <token>"
     scrape_providers:                 # host-local, computed live per scrape, all opt-in
+        instance: false
         opcache: false
         php_fpm: false
         opensearch: false
@@ -110,6 +111,7 @@ stored metrics):
 
 | Provider | Metrics | Note |
 |---|---|---|
+| `instance` | `instance_info`, `redis_usage{purpose}`, `has_opensearch`, `mysql_version_info` | Environment, Shopware/database versions, per-subsystem Redis usage (app_cache, session, cart, number_range, cache_invalidation) |
 | `opcache` | `opcache_*`, `php_version_info` | OPcache state is not exposed by the FPM status page |
 | `php_fpm` | `phpfpm_*` | Prefer the native FPM status page (`pm.status_path` + `?openmetrics`, PHP ≥ 8.1) |
 | `opensearch` | `opensearch_*` | Prefer a dedicated infrastructure exporter next to the cluster |

@@ -2,6 +2,7 @@
 
 namespace Symfony\Component\DependencyInjection\Loader\Configurator;
 
+use Doctrine\DBAL\Connection;
 use Prometheus\CollectorRegistry;
 use Shopware\Core\Framework\Adapter\Cache\RedisConnectionFactory;
 use Shopware\Core\Framework\Adapter\Redis\RedisConnectionProvider;
@@ -9,6 +10,7 @@ use Shopware\PrometheusExporter\Command\ClearStorageCommand;
 use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\Command\TestMetricsCommand;
 use Shopware\PrometheusExporter\Controller\MetricsController;
+use Shopware\PrometheusExporter\Metrics\InstanceMetricProvider;
 use Shopware\PrometheusExporter\Metrics\MetricsCollector;
 use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
@@ -62,6 +64,21 @@ return static function (ContainerConfigurator $container): void {
 
     // Scrape-time metric providers, opt-in per "provider" name via
     // prometheus_exporter.scrape_providers (applied in ScrapeProviderPass)
+    $services->set(InstanceMetricProvider::class)
+        ->args([
+            service(Connection::class),
+            abstract_arg('elasticsearch.enabled parameter when the Elasticsearch bundle is installed, resolved by ScrapeProviderPass'),
+            service('cache.app'),
+            service('session.handler')->nullOnInvalid(),
+            param('kernel.environment'),
+            param('kernel.shopware_version'),
+            param('shopware.cart.storage.type'),
+            param('shopware.number_range.increment_storage'),
+            param('shopware.cache.invalidation.delay_enabled'),
+            param('shopware.cache.invalidation.delay_options.storage'),
+        ])
+        ->tag('shopware.prometheus.metrics', ['provider' => 'instance']);
+
     $services->set(PHPInfoMetricProvider::class)
         ->tag('shopware.prometheus.metrics', ['provider' => 'opcache']);
 
