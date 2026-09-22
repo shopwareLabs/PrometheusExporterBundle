@@ -7,7 +7,6 @@ use PHPUnit\Framework\Attributes\UsesClass;
 use PHPUnit\Framework\TestCase;
 use Prometheus\CollectorRegistry;
 use Prometheus\Storage\InMemory;
-use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Shopware\PrometheusExporter\Controller\MetricsController;
 use Shopware\PrometheusExporter\Metrics\MetricsCollector;
@@ -54,12 +53,9 @@ class MetricsControllerTest extends TestCase
         static::assertSame(Response::HTTP_OK, $controller->metrics($this->request(token: 'secret', ip: '127.0.0.1'))->getStatusCode());
     }
 
-    public function testUnprotectedEndpointLogsWarning(): void
+    public function testUnprotectedEndpointStillResponds(): void
     {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects($this->once())->method('warning');
-
-        $controller = $this->createController(allowedIps: [], logger: $logger);
+        $controller = $this->createController(allowedIps: []);
 
         static::assertSame(Response::HTTP_OK, $controller->metrics($this->request())->getStatusCode());
     }
@@ -80,13 +76,11 @@ class MetricsControllerTest extends TestCase
     private function createController(
         array $allowedIps = ['127.0.0.1'],
         ?string $authToken = null,
-        ?LoggerInterface $logger = null,
     ): MetricsController {
         return new MetricsController(
             new MetricsCollector($this->registry, [], new NullLogger()),
             $allowedIps,
             $authToken,
-            $logger ?? new NullLogger(),
         );
     }
 

@@ -67,6 +67,25 @@ class TestMetricsCommandTest extends TestCase
 
         static::assertSame(Command::SUCCESS, $exitCode);
         static::assertStringContainsString('Metrics endpoint is working correctly.', $tester->getDisplay());
+        static::assertStringNotContainsString('without auth_token or allowed_ips restriction', $this->unwrap($tester->getDisplay()));
+    }
+
+    public function testWarnsWhenNeitherGuardIsConfigured(): void
+    {
+        $tester = $this->createTester(allowedIps: []);
+        $exitCode = $tester->execute([]);
+
+        static::assertSame(Command::SUCCESS, $exitCode);
+        static::assertStringContainsString('without auth_token or allowed_ips restriction', $this->unwrap($tester->getDisplay()));
+    }
+
+    /**
+     * SymfonyStyle blocks hard-wrap at the terminal width; collapse the wrapping
+     * so assertions can match a phrase regardless of where the break lands.
+     */
+    private function unwrap(string $display): string
+    {
+        return (string) \preg_replace('/\s+/', ' ', $display);
     }
 
     /**
@@ -78,9 +97,8 @@ class TestMetricsCommandTest extends TestCase
             new MetricsCollector($this->registry, [], new NullLogger()),
             $allowedIps,
             $authToken,
-            new NullLogger(),
         );
 
-        return new CommandTester(new TestMetricsCommand($controller, $authToken));
+        return new CommandTester(new TestMetricsCommand($controller, $allowedIps, $authToken));
     }
 }

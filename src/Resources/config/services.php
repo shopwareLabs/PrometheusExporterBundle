@@ -58,7 +58,6 @@ return static function (ContainerConfigurator $container): void {
             service(MetricsCollector::class),
             param('prometheus_exporter.endpoint.allowed_ips'),
             param('prometheus_exporter.endpoint.auth_token'),
-            service('logger'),
         ])
         ->tag('controller.service_arguments');
 
@@ -104,6 +103,7 @@ return static function (ContainerConfigurator $container): void {
     $services->set(TestMetricsCommand::class)
         ->args([
             service(MetricsController::class),
+            param('prometheus_exporter.endpoint.allowed_ips'),
             param('prometheus_exporter.endpoint.auth_token'),
         ])
         ->tag('console.command');

@@ -128,8 +128,8 @@ TTLs (would corrupt counter/histogram rates); revisit later if needed.
 
 - `GET /api/_internal/prometheus`, api route scope, `auth_required: false` + bundle's own guard.
 - Guard: every **configured** check must pass — `auth_token` (`Authorization: Bearer <token>`,
-  `hash_equals`) and/or `allowed_ips`. 401/403 on failure. Log a warning at boot when neither is
-  configured outside dev.
+  `hash_equals`) and/or `allowed_ips`. 401/403 on failure. `prometheus:test-metrics` warns when
+  neither is configured (an open endpoint is an explicit opt-out, so no per-scrape logging).
 - The endpoint is always registered while the bundle is active: scrape-time providers work independently
   of core telemetry, so no 404-when-disabled. When `TELEMETRY_METRICS` is off or
   `shopware.telemetry.metrics.enabled: false`, the registry section is simply empty (core never calls the
@@ -207,7 +207,8 @@ prometheus_exporter:
 
 - Unit: type mapping incl. `updown_counter→Gauge::incBy`, buffered vs direct write modes, name/label
   sanitization, connection resolution + client-type validation errors (incl. Predis accepted, cluster
-  rejected), merged render output, auth guard (token, IP, both, neither-warning).
+  rejected), merged render output, auth guard (token, IP, both, neither → open-endpoint warning
+  in `prometheus:test-metrics`).
 - Integration (bundle symlinked into local shopware, see
   `../shopware/INSTALL_SYMLINK_TELEMETRY.md`): enable flag + `metrics.enabled`, hit a storefront page, run
   worker + `scheduled-task:run`, scrape with Bearer token → core metrics appear prefixed

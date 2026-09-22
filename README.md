@@ -97,8 +97,8 @@ Every **configured** check must pass:
 - `allowed_ips` non-empty → the client IP must match (mismatch → 403).
 
 Note that `allowed_ips` defaults to localhost: when you protect the endpoint with a token and scrape
-from another host, set `allowed_ips: []` explicitly. An endpoint with neither check logs a warning on
-every scrape.
+from another host, set `allowed_ips: []` explicitly. `prometheus:test-metrics` warns when neither
+check is configured.
 
 The endpoint is always registered while the bundle is active. When telemetry is disabled
 (`shopware.telemetry.metrics.enabled: false` or the feature flag is off), the stored-metrics section
@@ -157,7 +157,8 @@ scrape_configs:
   included) and prints the response: a quick way to inspect what a scrape would return without HTTP
   access. By default the request carries the configured `auth_token` and a localhost client IP;
   `--ip` and `--token` simulate other callers, and a rejected request fails the command with the
-  status code and the guard that refused it.
+  status code and the guard that refused it. Warns when the endpoint is configured without
+  `auth_token` and `allowed_ips`, i.e. reachable without restriction.
 - `bin/console prometheus:scrape-providers` — lists every registered scrape-time provider (disabled
   ones included) with its toggle name, class, and enabled state.
 - `bin/console prometheus:clear-storage` — wipes all stored series. Use it to drop stale gauge label

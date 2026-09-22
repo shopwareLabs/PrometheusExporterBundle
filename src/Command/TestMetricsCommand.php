@@ -17,6 +17,7 @@ use Symfony\Component\HttpFoundation\Response;
  * the response. By default the simulated request carries the configured auth_token and
  * a localhost client IP, i.e. it behaves like a legitimate local scrape; --ip and
  * --token exist to simulate other callers, including deliberately rejected ones.
+ * Also warns when neither guard is configured, i.e. the endpoint is open.
  *
  * @internal
  */
@@ -26,8 +27,12 @@ use Symfony\Component\HttpFoundation\Response;
 )]
 class TestMetricsCommand extends Command
 {
+    /**
+     * @param array<string> $allowedIps
+     */
     public function __construct(
         private readonly MetricsController $metricsController,
+        private readonly array $allowedIps,
         private readonly ?string $authToken,
     ) {
         parent::__construct();
@@ -74,6 +79,10 @@ class TestMetricsCommand extends Command
 
         $io->section('Prometheus Metrics Output');
         $io->writeln((string) $response->getContent());
+
+        if ($this->authToken === null && $this->allowedIps === []) {
+            $io->warning('The metrics endpoint is reachable without auth_token or allowed_ips restriction.');
+        }
 
         $io->success('Metrics endpoint is working correctly.');
 
