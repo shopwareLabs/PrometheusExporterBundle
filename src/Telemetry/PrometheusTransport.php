@@ -52,12 +52,12 @@ class PrometheusTransport implements MetricTransportInterface
 
     private function write(Metric $metric): void
     {
-        $namespace = $this->namespace === null ? '' : self::sanitizeMetricName($this->namespace);
-        $name = self::sanitizeMetricName($metric->name);
+        $namespace = $this->namespace === null ? '' : MetricNaming::sanitizeMetricName($this->namespace);
+        $name = MetricNaming::sanitizeMetricName($metric->name);
 
         $labels = $metric->labels;
         \ksort($labels); // deterministic series identity, independent of emitter argument order
-        $labelNames = \array_map(self::sanitizeLabelName(...), \array_keys($labels));
+        $labelNames = \array_map(MetricNaming::sanitizeLabelName(...), \array_keys($labels));
         $labelValues = \array_map(self::formatLabelValue(...), \array_values($labels));
 
         $value = (float) $metric->value;
@@ -92,16 +92,6 @@ class PrometheusTransport implements MetricTransportInterface
         }
 
         return \array_values(\array_map(floatval(...), $buckets));
-    }
-
-    private static function sanitizeMetricName(string $name): string
-    {
-        return (string) \preg_replace('/[^a-zA-Z0-9_:]/', '_', $name);
-    }
-
-    private static function sanitizeLabelName(string $name): string
-    {
-        return (string) \preg_replace('/[^a-zA-Z0-9_]/', '_', $name);
     }
 
     private static function formatLabelValue(string|bool|float|int $value): string

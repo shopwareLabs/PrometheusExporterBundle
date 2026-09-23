@@ -4,6 +4,8 @@ namespace Shopware\PrometheusExporter\DependencyInjection\CompilerPass;
 
 use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\Metrics\InstanceMetricProvider;
+use Shopware\PrometheusExporter\Metrics\MetricsCollector;
+use Shopware\PrometheusExporter\Telemetry\MetricNaming;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -31,6 +33,10 @@ class ScrapeProviderPass implements CompilerPassInterface
     final public const TAG = 'shopware.prometheus.metrics';
 
     private const PARAMETER = 'prometheus_exporter.scrape_providers';
+
+    private const NAMESPACE_PARAMETER = 'prometheus_exporter.scrape_metrics_namespace';
+
+    private const CORE_NAMESPACE_PARAMETER = 'shopware.telemetry.metrics.namespace';
 
     private const BUNDLE_NAMESPACE = 'Shopware\\PrometheusExporter\\';
 
@@ -115,5 +121,31 @@ class ScrapeProviderPass implements CompilerPassInterface
                 $container->hasParameter('elasticsearch.enabled') ? new Parameter('elasticsearch.enabled') : false,
             );
         }
+
+        if ($container->hasDefinition(MetricsCollector::class)) {
+            $container->getDefinition(MetricsCollector::class)
+                ->replaceArgument(3, $this->resolveNamespace($container));
+        }
+    }
+
+    /**
+     * scrape_metrics_namespace: null inherits the core telemetry namespace (the stored
+     * metrics' prefix), '' disables the prefix, any other string is used as-is (sanitized).
+     */
+    private function resolveNamespace(ContainerBuilder $container): string
+    {
+        $namespace = $container->hasParameter(self::NAMESPACE_PARAMETER)
+            ? $container->getParameter(self::NAMESPACE_PARAMETER)
+            : null;
+
+        if ($namespace === null && $container->hasParameter(self::CORE_NAMESPACE_PARAMETER)) {
+            $namespace = $container->getParameter(self::CORE_NAMESPACE_PARAMETER);
+        }
+
+        if (!\is_string($namespace) || $namespace === '') {
+            return '';
+        }
+
+        return MetricNaming::sanitizeMetricName($namespace);
     }
 }

@@ -7,6 +7,7 @@ use PHPUnit\Framework\TestCase;
 use Shopware\PrometheusExporter\Command\ListScrapeProvidersCommand;
 use Shopware\PrometheusExporter\DependencyInjection\CompilerPass\ScrapeProviderPass;
 use Shopware\PrometheusExporter\Metrics\InstanceMetricProvider;
+use Shopware\PrometheusExporter\Metrics\MetricsCollector;
 use Shopware\PrometheusExporter\Metrics\OpenSearchMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPFPMMetricProvider;
 use Shopware\PrometheusExporter\Metrics\PHPInfoMetricProvider;
@@ -157,6 +158,41 @@ class ScrapeProviderPassTest extends TestCase
         (new ScrapeProviderPass())->process($container);
 
         static::assertFalse($container->getDefinition(InstanceMetricProvider::class)->getArgument(1));
+    }
+
+    public function testNamespaceResolution(): void
+    {
+        // [bundle namespace or "unset", core namespace or "unset", expected effective namespace]
+        $cases = [
+            ['acme.metrics', 'shopware', 'acme_metrics', 'custom value wins and is sanitized'],
+            ['', 'shopware', '', 'empty string disables the prefix'],
+            [null, 'shopware', 'shopware', 'null inherits the core telemetry namespace'],
+            [null, 'io.otel.shopware', 'io_otel_shopware', 'inherited value is sanitized'],
+            [null, null, '', 'core namespace null means no prefix'],
+            [null, 'unset', '', 'no core parameter means no prefix'],
+            ['unset', 'shopware', 'shopware', 'missing bundle parameter behaves like null'],
+        ];
+
+        foreach ($cases as [$bundleNamespace, $coreNamespace, $expected, $reason]) {
+            $container = new ContainerBuilder();
+            $container->setParameter('prometheus_exporter.scrape_providers', []);
+            if ($bundleNamespace !== 'unset') {
+                $container->setParameter('prometheus_exporter.scrape_metrics_namespace', $bundleNamespace);
+            }
+            if ($coreNamespace !== 'unset') {
+                $container->setParameter('shopware.telemetry.metrics.namespace', $coreNamespace);
+            }
+            $container->register(MetricsCollector::class)
+                ->setArguments([null, [], null, new AbstractArgument('injected by the pass')]);
+
+            (new ScrapeProviderPass())->process($container);
+
+            static::assertSame(
+                $expected,
+                $container->getDefinition(MetricsCollector::class)->getArgument(3),
+                $reason,
+            );
+        }
     }
 
     /**

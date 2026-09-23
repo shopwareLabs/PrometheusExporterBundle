@@ -30,6 +30,7 @@ class PrometheusExporterExtension extends Extension
         $container->setParameter('prometheus_exporter.endpoint.allowed_ips', $config['endpoint']['allowed_ips']);
         $container->setParameter('prometheus_exporter.endpoint.auth_token', $config['endpoint']['auth_token']);
         $container->setParameter('prometheus_exporter.scrape_providers', $config['scrape_providers']);
+        $container->setParameter('prometheus_exporter.scrape_metrics_namespace', $config['scrape_metrics_namespace']);
     }
 
     public function getAlias(): string
