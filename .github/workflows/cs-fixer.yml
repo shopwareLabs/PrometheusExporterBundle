@@ -1,0 +1,31 @@
+name: CS-Fixer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.php'
+      - '.php-cs-fixer.dist.php'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  cs-fixer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+          coverage: none
+          extensions: gd, intl, mbstring, pdo_mysql, sodium, zip
+
+      - name: Install dependencies
+        run: composer update --no-ansi --no-interaction --no-progress
+
+      - name: Run PHP-CS-Fixer
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff

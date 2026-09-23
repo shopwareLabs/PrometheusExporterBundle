@@ -1,0 +1,46 @@
+name: PHPUnit
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.php'
+      - 'phpunit.xml.dist'
+      - 'composer.json'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version:
+          - '8.2'
+          - '8.3'
+        dependencies:
+          - lowest
+          - highest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          tools: composer:v2
+          coverage: none
+          extensions: gd, intl, mbstring, pdo_mysql, sodium, zip
+
+      - name: Install lowest dependencies with composer
+        if: matrix.dependencies == 'lowest'
+        run: composer update --no-ansi --no-interaction --no-progress --prefer-lowest
+
+      - name: Install highest dependencies with composer
+        if: matrix.dependencies == 'highest'
+        run: composer update --no-ansi --no-interaction --no-progress
+
+      - name: Run PHPUnit
+        run: vendor/bin/phpunit
