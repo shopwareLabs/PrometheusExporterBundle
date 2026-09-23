@@ -2,8 +2,9 @@
 
 namespace Shopware\PrometheusExporter;
 
-use Shopware\PrometheusExporter\DependencyInjection\PrometheusExporterExtension;
 use Shopware\Core\Framework\Bundle;
+use Shopware\PrometheusExporter\DependencyInjection\CompilerPass\ScrapeProviderPass;
+use Shopware\PrometheusExporter\DependencyInjection\PrometheusExporterExtension;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 
@@ -13,8 +14,7 @@ class PrometheusExporterBundle extends Bundle
     {
         parent::build($container);
 
-        $container->registerForAutoconfiguration(Metrics\MetricProviderInterface::class)
-            ->addTag('shopware.prometheus.metrics');
+        $container->addCompilerPass(new ScrapeProviderPass());
     }
 
     public function getContainerExtension(): ExtensionInterface
