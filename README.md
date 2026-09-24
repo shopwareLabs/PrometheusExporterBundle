@@ -2,8 +2,9 @@
 
 The official **pull transport** for Shopware's telemetry metrics abstraction. Metrics emitted through
 the core `Meter`/`Telemetry` API are stored in Redis and served in Prometheus text format on
-`GET /api/_internal/prometheus`. The bundle ships no instrumentation of its own — every metric defined
-in the core telemetry configuration arrives automatically.
+`GET /api/_internal/prometheus`. Every metric defined in the core telemetry configuration arrives
+automatically. Additionally the bundle ships opt-in [scrape-time providers](#scrape-time-providers-opt-in) that
+collect host-specific metrics (instance info, OPcache, PHP-FPM, OpenSearch stats) during each scrape.
 
 ## Requirements
 
@@ -73,8 +74,7 @@ prometheus_exporter:
 
 The Redis connection is resolved in this order:
 
-1. `storage.dsn` — the bundle opens its own connection (same DSN dialect as
-   `shopware.redis.connections`).
+1. `storage.dsn` — the bundle opens its own connection (same DSN dialect as `shopware.redis.connections`), e.g. `dsn: '%env(PROMETHEUS_REDIS_DSN)%'`.
 2. `storage.redis_connection_name` — reuses a connection managed by Shopware.
 
 The resolved client must be a phpredis `\Redis` or a `Predis\Client`; anything else fails with a

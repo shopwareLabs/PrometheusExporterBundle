@@ -1,8 +1,7 @@
 {
     "name": "shopware/prometheus-exporter",
     "description": "Prometheus pull transport for Shopware's telemetry metrics abstraction",
-    "version": "1.0.0",
-    "type": "shopware-platform-plugin",
+    "type": "library",
     "license": "MIT",
     "autoload": {
         "psr-4": {
@@ -36,12 +35,5 @@
             "symfony/runtime": false
         },
         "sort-packages": true
-    },
-    "extra": {
-        "shopware-platform-plugin": "Shopware\\PrometheusExporter\\PrometheusExporterBundle",
-        "label": {
-            "en-GB": "Prometheus Exporter",
-            "de-DE": "Prometheus Exporter"
-        }
     }
 }
