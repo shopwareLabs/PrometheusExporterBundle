@@ -94,6 +94,7 @@ class PrometheusTransportTest extends TestCase
 
         // the buffer is cleared on flush, a second flush must not double-count
         $transport->flush();
+        // @phpstan-ignore staticMethod.alreadyNarrowedType (flush() could double-count; re-asserting the unchanged value is the point of the test)
         static::assertSame(2.0, (float) $this->singleSample('order_placed_count')->getValue());
     }
 
